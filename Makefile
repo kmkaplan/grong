@@ -1,6 +1,8 @@
 include $(GOROOT)/src/Make.$(GOARCH)
 
 TARBALL=/tmp/grong.tar.gz
+# Distributed resolvers: as112.go, reflector-responder.go, rude-responder.go
+RESPONDER=rude-responder.go
 
 all: server
 
@@ -10,6 +12,7 @@ test: server
 server.$O: responder.$O types.$O
 
 responder.$O: types.$O
+	${GC} -o $@ $(RESPONDER)
 
 %.$O: %.go 
 	${GC} $<
