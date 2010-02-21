@@ -9,6 +9,7 @@ package responder
 import (
 	"regexp"
 	"strings"
+	"container/vector"
 	"./types"
 )
 
@@ -53,18 +54,16 @@ var (
 	}
 )
 
-func nsRecords(domain string) (result []types.RR) {
-	result = make([]types.RR, len(as112nameServers))
-	for i, text := range as112nameServers {
-		result[i] = types.RR{
+func nsRecords(domain string, asection *vector.Vector) {
+	for i := 0; i < len(as112nameServers); i++ {
+		asection.Push(types.RR{
 			Name: domain,
 			TTL: defaultTTL,
 			Type: types.NS,
 			Class: types.IN,
-			Data: types.Encode(text),
-		}
+			Data: types.Encode(as112nameServers[i]),
+		})
 	}
-	return
 }
 
 func soaRecord(domain string, soa types.SOArecord) (result types.RR) {
@@ -81,48 +80,52 @@ func soaRecord(domain string, soa types.SOArecord) (result types.RR) {
 func Respond(query types.DNSquery) (result types.DNSresponse) {
 	result.Responsecode = types.SERVFAIL
 	qname := strings.ToLower(query.Qname)
+	var asection, nssection vector.Vector
 	if query.Qclass == types.IN {
 		if as112Domain.MatchString(qname) {
 			result.Responsecode = types.NOERROR
-			switch {
-			case query.Qtype == types.NS:
-				result.Asection = nsRecords(query.Qname)
-			case query.Qtype == types.SOA:
-				result.Asection = make([]types.RR, 1)
-				result.Asection[0] = soaRecord(query.Qname, as112soa)
-			default:
-				// Do nothing
+			if (types.QMatches(query.Qtype, types.NS)) {
+				nsRecords(query.Qname, &asection)
+			}
+			if (types.QMatches(query.Qtype, types.SOA)) {
+				asection.Push(soaRecord(query.Qname, as112soa))
 			}
 		}
 		matches := as112SubDomain.MatchStrings(qname)
 		if len(matches) > 0 {
 			result.Responsecode = types.NXDOMAIN
-			result.Nssection = []types.RR{
-				soaRecord(matches[1], as112soa),
-			}
+			nssection.Push(soaRecord(matches[1], as112soa))
 		}
 		if qname == "hostname.as112.net" {
 			result.Responsecode = types.NOERROR
-			switch query.Qtype { // TODO: handle ANY qtypes
-			case types.TXT:
-				result.Asection = make([]types.RR, len(hostnameAnswers))
-				for i, text := range hostnameAnswers {
-					result.Asection[i] = types.RR{
+			if types.QMatches(query.Qtype, types.TXT) {
+				for i := 0; i < len(hostnameAnswers); i++ {
+					asection.Push(types.RR{
 						Name: query.Qname,
 						TTL: defaultTTL,
 						Type: types.TXT,
 						Class: types.IN,
-						Data: types.ToTXT(text),
-					}
+						Data: types.ToTXT(hostnameAnswers[i]),
+					})
 				}
-			case types.NS:
-				result.Asection = nsRecords(query.Qname)
-			case types.SOA:
-				result.Asection = []types.RR{soaRecord(query.Qname, hostnamesoa)}
-			default:
-				// Do nothing
+			}
+			if (types.QMatches(query.Qtype, types.NS)) {
+				nsRecords(query.Qname, &asection)
+			}
+			if (types.QMatches(query.Qtype, types.SOA)) {
+				asection.Push(soaRecord(query.Qname, hostnamesoa))
 			}
 		}
 	}
-	return result
+	data := asection.Data()
+	result.Asection = make([]types.RR, len(data))
+	for i := 0; i < len(data); i++  {
+		result.Asection[i] = data[i].(types.RR)
+	}
+	data = nssection.Data()
+	result.Nssection = make([]types.RR, len(data))
+	for i := 0; i < len(data); i++ {
+		result.Nssection[i] = data[i].(types.RR)
+	}
+	return
 }

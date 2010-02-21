@@ -110,6 +110,11 @@ const (
 
 // Various utility functions
 
+// check if a query type matches
+func QMatches(testType uint16, qType uint16) bool {
+	return qType == testType || qType == ALL || testType == ALL
+}
+
 // Converts a string to the wire format {length, data}
 func ToTXT(s string) []byte {
 	result := make([]byte, 1+len(s))
