@@ -79,11 +79,10 @@ func soaRecord(domain string, soa types.SOArecord) (result types.RR) {
 }
 
 func Respond(query types.DNSquery) (result types.DNSresponse) {
-	result.Asection = nil
+	result.Responsecode = types.SERVFAIL
 	qname := strings.ToLower(query.Qname)
 	if query.Qclass == types.IN {
-		switch {
-		case as112Domain.Match([]byte(qname)):
+		if as112Domain.MatchString(qname) {
 			result.Responsecode = types.NOERROR
 			switch {
 			case query.Qtype == types.NS:
@@ -94,11 +93,15 @@ func Respond(query types.DNSquery) (result types.DNSresponse) {
 			default:
 				// Do nothing
 			}
-		case as112SubDomain.Match([]byte(qname)):
+		}
+		matches := as112SubDomain.MatchStrings(qname)
+		if len(matches) > 0 {
 			result.Responsecode = types.NXDOMAIN
-			// TODO: send the proper SOA in the authority section (so we
-			// must find which domain matched)
-		case qname == "hostname.as112.net":
+			result.Nssection = []types.RR{
+				soaRecord(matches[1], as112soa),
+			}
+		}
+		if qname == "hostname.as112.net" {
 			result.Responsecode = types.NOERROR
 			switch query.Qtype { // TODO: handle ANY qtypes
 			case types.TXT:
@@ -119,11 +122,7 @@ func Respond(query types.DNSquery) (result types.DNSresponse) {
 			default:
 				// Do nothing
 			}
-		default:
-			result.Responsecode = types.SERVFAIL
 		}
-	} else {
-		result.Responsecode = types.SERVFAIL
 	}
 	return result
 }

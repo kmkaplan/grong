@@ -18,7 +18,7 @@ import (
 // info can be represented.
 type DNSresponse struct {
 	Responsecode uint
-	Asection     []RR
+	Asection, Nssection []RR
 }
 
 // This type is used for the communication between the server (the
@@ -49,7 +49,7 @@ type DNSpacket struct {
 	Qdcount, Ancount, Arcount, Nscount uint16 // May be use the implicit length 
 	// of the following arrays, instead?
 	Qsection                           []Qentry
-	Asection                           []RR
+	Asection, Nssection                []RR
 	// TODO: other sections
 }
 

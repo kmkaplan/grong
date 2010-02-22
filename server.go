@@ -18,6 +18,24 @@ import (
 
 var debug int
 
+func serializeSection(section []types.RR, buffer []byte, end int) int {
+	for i := 0; i < len(section); i++ {
+		rr := section[i]
+		encoded_qname := types.Encode(rr.Name)
+		end += copy(buffer[end:], encoded_qname)
+		binary.BigEndian.PutUint16(buffer[end:], rr.Type)
+		end += 2
+		binary.BigEndian.PutUint16(buffer[end:], rr.Class)
+		end += 2
+		binary.BigEndian.PutUint32(buffer[end:], rr.TTL)
+		end += 4
+		binary.BigEndian.PutUint16(buffer[end:], uint16(len(rr.Data)))
+		end += 2
+		end += copy(buffer[end:], rr.Data)
+	}
+	return end
+}
+
 func serialize(packet types.DNSpacket) []byte {
 	result := make([]byte, 512)
 	// ID
@@ -29,8 +47,7 @@ func serialize(packet types.DNSpacket) []byte {
 	// Ancount
 	binary.BigEndian.PutUint16(result[6:8], packet.Ancount)
 	// Nscount
-	result[8] = 0
-	result[9] = 0
+	binary.BigEndian.PutUint16(result[8:], packet.Nscount)
 	// Arcount
 	result[10] = 0
 	result[11] = 0
@@ -39,33 +56,14 @@ func serialize(packet types.DNSpacket) []byte {
 		os.Exit(1) // TODO: better handling
 	}
 	encoded_qname := types.Encode(packet.Qsection[0].Qname)
-	last := 0
-	for i, c := range encoded_qname {
-		result[12+i] = c
-		last = i
-	}
-	binary.BigEndian.PutUint16(result[12+last+1:], packet.Qsection[0].Qtype)
-	binary.BigEndian.PutUint16(result[12+last+3:], packet.Qsection[0].Qclass)
-	last = 12 + last + 5
-	for rrnum, rr := range packet.Asection {
-		encoded_qname := types.Encode(packet.Asection[rrnum].Name)
-		n := 0
-		for i, c := range encoded_qname {
-			result[last+i] = c
-			n++
-		}
-		binary.BigEndian.PutUint16(result[last+n:last+n+2], rr.Type)
-		binary.BigEndian.PutUint16(result[last+n+2:last+n+4], rr.Class)
-		binary.BigEndian.PutUint32(result[last+n+4:last+n+8], rr.TTL)
-		binary.BigEndian.PutUint16(result[last+n+8:last+n+10], uint16(len(rr.Data)))
-		last = last + n + 10
-		n = 0
-		for i, c := range packet.Asection[rrnum].Data {
-			result[last+i] = c
-			n++
-		}
-		last = last + n
-	}
+	last := 12
+	last += copy(result[last:], encoded_qname)
+	binary.BigEndian.PutUint16(result[last:], packet.Qsection[0].Qtype)
+	last += 2
+	binary.BigEndian.PutUint16(result[last:], packet.Qsection[0].Qclass)
+	last += 2
+	last = serializeSection(packet.Asection, result, last)
+	last = serializeSection(packet.Nssection, result, last)
 	return result[0:last]
 }
 
@@ -173,9 +171,9 @@ func generichandle(buf *bytes.Buffer, remaddr net.Addr) (response types.DNSpacke
 		desiredresponse := responder.Respond(query)
 		response.Rcode = desiredresponse.Responsecode
 		response.Ancount = uint16(len(desiredresponse.Asection))
-		if response.Ancount > 0 {
-			response.Asection = desiredresponse.Asection
-		}
+		response.Asection = desiredresponse.Asection
+		response.Nscount = uint16(len(desiredresponse.Nssection))
+		response.Nssection = desiredresponse.Nssection
 		return
 	}
 	// Else, ignore the incoming query. May be we should reply REFUSED instead?
